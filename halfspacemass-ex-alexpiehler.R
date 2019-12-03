@@ -82,6 +82,7 @@ train_depth <- function(data, # data to train halfspace depth
     "mass_right" = mass_right
   )
 }
+
 get_unit_vector <- function(dimensions){
     randn_unif <- runif(dimensions, -1, 1)
     normalized_vector <- matrix(randn_unif, ncol = 1) * (1/norm(randn_unif, type = "2"))
@@ -89,18 +90,12 @@ get_unit_vector <- function(dimensions){
   
 }
 
-project_data <- function(data, unit_vector){
-  
-  data %*% unit_vector
-}
 
 sample_without_replacement <- function(data, fraction){
   rows_to_sample <- sample(nrow(data), size = floor(nrow(data) * fraction))
   
   data[rows_to_sample, , drop = FALSE]
 }
-
-
 
 get_cutoff <- function(max, min, mid, scope, output_list = TRUE){
   
