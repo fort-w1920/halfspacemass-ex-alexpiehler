@@ -2,7 +2,7 @@
 
 get_normalized_vector(2)
 
-n <- 500
+n <- 10
 
 data <- matrix(
   c(rnorm(n/2, mean = sqrt(1:n), sd = log(1:n)),rexp(n/2,seq(from = 1, to = 2, length.out = 1000))),

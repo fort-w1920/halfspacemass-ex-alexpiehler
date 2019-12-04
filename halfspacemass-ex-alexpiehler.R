@@ -21,8 +21,13 @@ train_depth <- function(data, # data to train halfspace depth
       )
     )
   }
+  
+  column_names <- NULL
+  if(is.null(colnames(data))){
+    column_names <- colnames(data)
+  }
 
-  column_names <- colnames(data)
+  
   data <- as.matrix(data)
 
   checkmate::assert_matrix(
@@ -89,82 +94,65 @@ train_depth <- function(data, # data to train halfspace depth
     side = "right",
     subsample_size = floor(nrow(data) * subsample)
   )
+  
+  halfspaces <- list(
+    "cutoff_points" = cutoff_points,
+    "hyperplanes" = unit_vector_list,
+    "mass_left" = unlist(mass_left),
+    "mass_right" = unlist(mass_right)
+  )
 
-  if (plot_yes) {
-    if (ncol(data) != 2) {
-      warning(
-        "Results can only be plotted for 2-dimensional data. Returning trained model without plot"
-      )
-      return(
-        list(
-          "cutoff_points" = unlist(cutoff_points),
-          "hyperplanes" = unit_vector_list,
-          "mass_left" = unlist(mass_left),
-          "mass_right" = unlist(mass_right)
-        )
-      )
-    }
-
-    minima <- apply(data, 2, min) - apply(data, 2, sd)
-    maxima <- apply(data, 2, max) + apply(data, 2, sd)
-
-    grid_for_plot <- expand.grid(
-      x = seq(minima[1], maxima[1], length.out = 50),
-      y = seq(minima[2], maxima[2], length.out = 50)
-    )
-
-    projections_per_datum <- make_projections_per_datum(
-      data = grid_for_plot,
-      hyperplanes = unit_vector_list
-    )
-
-    halfspace_mass_grid <- get_halfspace_mass(
-      projections_per_datum = projections_per_datum,
-      cutoff_points = unlist(cutoff_points),
-      mass_left = unlist(mass_left),
-      mass_right = unlist(mass_right)
-    )
-
-    data_for_plot <- as.data.frame(cbind(grid_for_plot, halfspace_mass_grid))
-    colnames(data_for_plot) <- c("v1", "v2", "halfspacemass")
-
-    spectralcolors <- c(
-      "darkblue", "blue", "cyan", "lightgreen",
-      "yellow", "orange", "red", "darkred"
-    )
-
-    halfspace_mass_plot <-
-      ggplot(data_for_plot, aes(x = v1, y = v2)) +
-      geom_tile(aes(fill = halfspacemass, colour = halfspacemass)) +
-      scale_fill_gradientn("mass", colors = spectralcolors) +
-      scale_colour_gradientn("mass", colors = spectralcolors) +
-      # geom_point(data = as.data.frame(data), aes(as.name(column_names[1])), as.name[column_names[2]])
-      theme_minimal()
-
-    print(halfspace_mass_plot)
-
-    list(
-      "cutoff_points" = unlist(cutoff_points),
-      "hyperplanes" = unit_vector_list,
-      "mass_left" = unlist(mass_left),
-      "mass_right" = unlist(mass_right),
-      "plot" = halfspace_mass_plot
-    )
-  } else {
-    list(
-      "cutoff_points" = unlist(cutoff_points),
-      "hyperplanes" = unit_vector_list,
-      "mass_left" = unlist(mass_left),
-      "mass_right" = unlist(mass_right)
-    )
+  if (!plot_yes) {
+    return(halfspaces)
   }
-}
+  
+  if (ncol(data) != 2) {
+    warning(
+      "Results can only be plotted for 2-dimensional data. Returning trained model without plot"
+    )
+    return(halfspaces)
+  }
+  
+  # Get the endpoints of the data to expand a grid of values
+  minima <- apply(data, 2, min) - apply(data, 2, sd)
+  maxima <- apply(data, 2, max) + apply(data, 2, sd)
+  
+  # If the data of a variable is a constant, get a range of 10 for this axis
+  if (any(minima == maxima)) {
+    loc <- which(minima == maxima)
+    minima[loc] <- -5
+    maxima[loc] <- 5
+  }
+  
+  # Expand the grid of values
+  grid_for_plot <- expand.grid(
+    x = seq(minima[1], maxima[1], length.out = 50),
+    y = seq(minima[2], maxima[2], length.out = 50)
+  )
+  
+  
+  halfspace_mass_grid <-
+    evaluate_depth(data = grid_for_plot, halfspaces = halfspaces)
+  
+  data_for_plot <-
+    as.data.frame(cbind(grid_for_plot, halfspace_mass_grid))
+  
+  halfspace_mass_plot <- plot_depth(
+    original_data = data,
+    depth_data = data_for_plot,
+    column_names = column_names
+  )
+  
+  print(halfspace_mass_plot)
+  
+  halfspaces[["plot"]] <- halfspace_mass_plot
+  halfspaces
+} 
 
 evaluate_depth <- function(data, halfspaces) {
   if (checkmate::test_matrix(data)) {
     data <- try(as.data.frame(data))
   }
-
 
   checkmate::assert_data_frame(data,
     types = c("logical", "integer", "integerish", "double", "numeric"),
@@ -207,28 +195,19 @@ sample_without_replacement <- function(data,
 get_cutoff <- function(max,
                        min,
                        mid,
-                       scope,
-                       output_list = TRUE) { # Computes the cutoff per sampled halfspace.
-
+                       scope) {
+  # The lower and upper sampling bound is computed. The dimensions mid/max/min
+  # are (1 x n_halfspace)
   lower_sampling_bound <- mid - (0.5 * scope * (max - min))
   upper_sampling_bound <- mid + (0.5 * scope * (max - min))
-
-  if (output_list) {
-    cutoff_points <- list(
-      rep(1, length(lower_sampling_bound)),
-      lower_sampling_bound,
-      upper_sampling_bound
-    ) %>% pmap(runif)
-  } else {
-    cutoff_points <- matrix(runif(
-      length(lower_sampling_bound),
-      lower_sampling_bound,
-      upper_sampling_bound
-    ),
-    nrow = 1
-    )
-  }
-
+  
+  # The cutoff points are sampled in the lower and upper sampling bound. 
+  # 
+  cutoff_points <- runif(length(lower_sampling_bound),
+                         lower_sampling_bound,
+                         upper_sampling_bound)
+                         
+  # Return a vector with the cutoff_points for every sampled halfspace
   cutoff_points
 }
 
@@ -242,12 +221,8 @@ get_mass <- function(cutoffs,
     "right" = purrr::map2(.x = projections, .y = cutoffs, `>=`)
   )
 
-  mass <- purrr::map2(
-    lapply(points_in_halfspace, sum),
-    subsample_size,
-    `/`
-  )
-
+  mass <- lapply(points_in_halfspace, mean)
+  
   mass
 }
 
@@ -255,11 +230,14 @@ get_halfspace_mass <- function(projections_per_datum,
                                cutoff_points,
                                mass_left,
                                mass_right) {
+  # Initiate a matrix that has (n_halfspaces x n)-dimensions
   mass_matrix <- matrix(NA,
     nrow = length(projections_per_datum[[1]]),
     ncol = length(projections_per_datum)
   )
-
+  
+  # For every observation a column in the matrix is filled up with values of
+  # mass right or mass left. A matrix with values between 0 and 1 is obtained
   for (datum in seq_len(length(projections_per_datum))) {
     mass_matrix[, datum] <-
       ifelse(projections_per_datum[[datum]] < cutoff_points,
@@ -267,23 +245,59 @@ get_halfspace_mass <- function(projections_per_datum,
         mass_right
       )
   }
-
-  halfspace_sums <- apply(mass_matrix, 2, sum)
-  halfspace_mass <- halfspace_sums / nrow(mass_matrix)
+  
+  # The columnwise mean is computed
+  halfspace_mass <- apply(mass_matrix, 2, mean)
   halfspace_mass
 }
 
 make_projections_per_datum <- function(data, hyperplanes) {
-  data_list <- purrr::modify(asplit(data, MARGIN = 1), as.matrix) # Convert data matrix into a list with length accoring to the amount of observations. Every entry will be a d-dimensional vector.
-  hyperplanes_transposed <- purrr::modify(hyperplanes, t) # Transpose the sampled hyperplanes for subsequent computation of scalar product
+  # Convert data matrix into a list with length accoring to the amount of 
+  # observations. Every entry will be a d-dimensional vector.
+  data_list <- purrr::modify(asplit(data, MARGIN = 1), as.matrix) 
+  # Transpose the sampled hyperplanes for subsequent computation of scalar product
+  hyperplanes_transposed <- purrr::modify(hyperplanes, t) 
+  
+  # A empty list is initiated with the length according to the observations
+  projections_per_datum <- vector(mode = "list", length = length(data_list)) 
 
-  projections_per_datum <- vector(mode = "list", length = length(data_list)) # A empty list is initiated with the length according to the observations
-
-  # For each observation (a [1 x d]-vector), the scalar product is computed with every sampled hyperplane (a [d x 1]-vector). The output per interation is a vector containing all scaler products with current observation and all the scalar products (a [1 x n_halfspaces]-vector).
+  # For each observation (a [1 x d]-vector), the scalar product is computed with
+  # every sampled hyperplane (a [d x 1]-vector). The output per interation is a 
+  # vector containing all scaler products with current observation and all the 
+  # scalar products (a [1 x n_halfspaces]-vector).
   for (datum in seq_len(length(data_list))) {
     projections_per_datum[[datum]] <-
       purrr::map_dbl(hyperplanes_transposed, `%*%`, data_list[[datum]])
   }
 
   projections_per_datum
+}
+
+plot_depth <- function(original_data, depth_data, column_names = NULL){
+  
+  if (is.null(column_names)) {
+    colnames(depth_data) <- c("v1", "v2", "val")
+    colnames(original_data) <- c("v1", "v2")
+  } else {
+    colnames(depth_data) <- c(column_names, "val")
+    colnames(original_data) <- column_names
+  }
+  
+  spectralcolors <- c(
+    "darkblue", "blue", "cyan", "lightgreen",
+    "yellow", "orange", "red", "darkred"
+  )
+  
+  plot_val <- ggplot(depth_data, aes(x = v1, y = v2)) +
+    geom_tile(aes(fill = val, colour = val)) +
+    scale_fill_gradientn("mass", colors = spectralcolors) +
+    scale_colour_gradientn("mass", colors = spectralcolors) +
+    geom_point(
+      data = as.data.frame(original_data),
+      aes_string(x = colnames(original_data)[1], y = colnames(original_data)[2]),
+      color = "white"
+    ) +
+    theme_minimal()
+  
+  plot_val
 }

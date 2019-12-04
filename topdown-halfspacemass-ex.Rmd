@@ -133,11 +133,11 @@ data_fig3 <- data.frame(z1 = c(-2, -.5, .5, 2), z2 = 0)
 grid_fig3 <- expand.grid(z1 = seq(-3, 3, l = 51), 
                          z2 = seq(-3, 3, l = 51))
 
-depth_fig3 <- train_depth(data_fig3, n_halfspace = 1e4, 
+depth_fig3 <- train_depth(data_fig3, n_halfspace = 1e4, subsample = 1,
                        scope = 1, seed = 4163)
 # need scope > 1 for reliable halfspace _depth_ approximation:
 depth_fig3_scope15 <- train_depth(data_fig3,
-                               n_halfspace = 1e3, scope = 1.5,
+                               n_halfspace = 1e3, scope = 1.5, subsample = 1,
                                seed = 4163)
 gridExtra::grid.arrange(
   plot_depth(depth_fig3_scope15,
@@ -183,11 +183,11 @@ data_fig5 <- rbind(cluster,
 
 hs_fig5 <- train_depth(data_fig5[, 1:2],
   n_halfspace = 1e4, subsample = .5,
-  seed = 4165
+  seed = 4165, plot_yes = TRUE
 )
 fig5 <- plot_depth(hs_fig5, data = data_fig5[, 1:2], points = FALSE)
 # can't assign two colour scales to one plot, so plot 2 groups separately:
-fig5 +
+hs_fig5$plot +
   geom_point(
     data = subset(data_fig5, group == "cluster"),
     aes(x = z1, y = z2), color = rgb(0, 0, 1, .5)
