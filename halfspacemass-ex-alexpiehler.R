@@ -3,6 +3,7 @@ train_depth <- function(data, # data to train halfspace depth
                         subsample, # fraction of of data which shall be used in each iteration
                         scope = 1,
                         plot_yes = FALSE,
+                        type = c("halfspacemass","tuckey"),
                         seed = 111191) {
   ### Input Checks ###
 
@@ -23,9 +24,11 @@ train_depth <- function(data, # data to train halfspace depth
   }
   
   column_names <- NULL
-  if(is.null(colnames(data))){
+  if (is.null(colnames(data))){
     column_names <- colnames(data)
   }
+  
+  type <- match.arg(type, c("halfspacemass","tuckey"))
 
   
   data <- as.matrix(data)
@@ -85,6 +88,7 @@ train_depth <- function(data, # data to train halfspace depth
     cutoffs = cutoff_points,
     projections = projections_list,
     side = "left",
+    type = type,
     subsample_size = floor(nrow(data) * subsample)
   )
 
@@ -92,6 +96,7 @@ train_depth <- function(data, # data to train halfspace depth
     cutoffs = cutoff_points,
     projections = projections_list,
     side = "right",
+    type = type,
     subsample_size = floor(nrow(data) * subsample)
   )
   
@@ -149,7 +154,9 @@ train_depth <- function(data, # data to train halfspace depth
   halfspaces
 } 
 
-evaluate_depth <- function(data, halfspaces) {
+evaluate_depth <- function(data,
+                           halfspaces,
+                           type = c("halfspacemass", "tuckey")) {
   if (checkmate::test_matrix(data)) {
     data <- try(as.data.frame(data))
   }
@@ -159,6 +166,8 @@ evaluate_depth <- function(data, halfspaces) {
     min.rows = 1,
     min.cols = 1
   )
+  
+  type <- match.arg(type, c("halfspacemass", "tuckey"))
 
   projections_per_datum <- make_projections_per_datum(
     data = data,
@@ -214,14 +223,19 @@ get_cutoff <- function(max,
 get_mass <- function(cutoffs,
                      projections,
                      side = c("left", "right"),
+                     type = c("halfspacemass","tuckey"),
                      subsample_size) {
   points_in_halfspace <- switch(
     side,
     "left" = purrr::map2(.x = projections, .y = cutoffs, `<`),
     "right" = purrr::map2(.x = projections, .y = cutoffs, `>=`)
   )
-
-  mass <- lapply(points_in_halfspace, mean)
+  
+  if (type == "halfspacemass") {
+    mass <- lapply(points_in_halfspace, mean)
+  } else {
+    mass <- lapply(points_in_halfspace, sum)
+  }
   
   mass
 }
@@ -241,13 +255,24 @@ get_halfspace_mass <- function(projections_per_datum,
   for (datum in seq_len(length(projections_per_datum))) {
     mass_matrix[, datum] <-
       ifelse(projections_per_datum[[datum]] < cutoff_points,
-        mass_left,
-        mass_right
+             mass_left,
+             mass_right
       )
   }
   
+  if (type == "halfspace") {
+
+    halfspace_mass <- apply(mass_matrix, 2, mean)
+    
+  } else {
+    
+    halfspace_mass <- apply(mass_matrix, 2, min)
+    halfspace_mass <- halfspace_mass * length(projections_per_datum)
+    
+  }
+
   # The columnwise mean is computed
-  halfspace_mass <- apply(mass_matrix, 2, mean)
+  
   halfspace_mass
 }
 
