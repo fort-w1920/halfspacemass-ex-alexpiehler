@@ -1,29 +1,52 @@
-train_depth <- function(data, # data to train halfspace depth
-                        n_halfspace, # number of halfspaces, which shall be sampled
-                        subsample, # fraction of of data which shall be used in each 
-                        scope = 1, # the sampling region for the splitpoint within the convex set
-                        seed = 111191) {
-  ### Input Checks ###
+---
+title: "halfspace_alexpiehler_sol"
+author: "Alex Piehler"
+date: "5 12 2019"
+output: html_document
+---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Im Nachfolgenden sind sowohl die Funktionen zu finden als auch die von Ihnen vorgegebenen Tests, sowie eine weitere Anwendung auf den `datasets::faithful`-Datensatz.
+
+Leider ist die Implementierung nicht 100% top-down, da die `plot_depth()`-Funktion die `evaluate_depth()`-Funktion aufruft.
+
+## Code
+
+```{r halfspacemass functions}
+train_depth <- function(data,
+                        # data to train halfspace depth
+                        n_halfspace,
+                        # number of halfspaces, which shall be sampled
+                        subsample,
+                        # fraction of of data which shall be used in each
+                        scope = 1,
+                        # the sampling region for the splitpoint within the convex set
+                        seed = 111191) {
+  ### Required Packages ###
+  surpressMessages(require(tidyverse))
+  surpressMessages(require(checkmate))
+  
+  
+  ### Input Checks ###
+  
   if (checkmate::test_list(data)) {
     data <- try(as.data.frame(data))
   }
-
+  
   if (checkmate::test_data_frame(data)) {
-    checkmate::assert_data_frame(
-      data,
-      types = c(
-        "logical",
-        "integer",
-        "integerish",
-        "double",
-        "numeric"
-      )
-    )
+    checkmate::assert_data_frame(data,
+                                 types = c("logical",
+                                           "integer",
+                                           "integerish",
+                                           "double",
+                                           "numeric"))
   }
-
+  
   data <- as.matrix(data)
-
+  
   checkmate::assert_matrix(
     data,
     any.missing = FALSE,
@@ -31,49 +54,46 @@ train_depth <- function(data, # data to train halfspace depth
     min.rows = 2,
     min.cols = 2,
   )
-
+  
   checkmate::assert_count(n_halfspace)
   checkmate::assert_number(subsample, lower = 0, upper = 1)
   checkmate::assert_number(scope, lower = 1)
   checkmate::assert_count(seed)
-
+  
   ### Computation of halfspaces ###
-
+  
   set.seed(seed)
-
-  # Create a list with the length number of halfspaces that should be sampled. 
-  # Each entry of the list contains the same numeric value: the dimensions of 
-  # the data (# features). The function 'get_unit_vector' is applied onto each 
+  
+  # Create a list with the length number of halfspaces that should be sampled.
+  # Each entry of the list contains the same numeric value: the dimensions of
+  # the data (# features). The function 'get_unit_vector' is applied onto each
   # entry of the list. This is done because the 'get_unit_vector' function takes
   # as input a dimension and outputs a unit vector of the same dimension.
-  unit_vector_list <- purrr::map(
-    rep(list(ncol(data)), times = n_halfspace),
-    get_unit_vector
-  )
-
+  unit_vector_list <- purrr::map(rep(list(ncol(data)), times = n_halfspace),
+                                 get_unit_vector)
+  
   # Create a list with the length number of halfspaces that should be sampled.
   # Each list entry initially contains the full dataset. Then to each list entry
-  # the function 'sample_without_replacement' is applied, to obtain a subsample 
+  # the function 'sample_without_replacement' is applied, to obtain a subsample
   # of the data with a prespecified fraction.
   subset_list <- purrr::map(rep(list(data), times = n_halfspace),
-    sample_without_replacement,
-    fraction = subsample
-  )
-
+                            sample_without_replacement,
+                            fraction = subsample)
+  
   # Each entry of the subset_list, containing the sampled subsets, is multiplied
-  # with each entry of the unit_vector_list. As the the subsampled data of one 
-  # list entry has the dimensions (n x p) and the the unit vector, which is 
-  # multiplied from the right has the dimensions (p x 1) for every list entry 
+  # with each entry of the unit_vector_list. As the the subsampled data of one
+  # list entry has the dimensions (n x p) and the the unit vector, which is
+  # multiplied from the right has the dimensions (p x 1) for every list entry
   # (n_halfspaces), we obtain a matrix (n x n_halfspaces). A matrix is chosen as
   # output, as this facilities easier subsequent computation.
   projections <- mapply(`%*%`, subset_list, unit_vector_list)
-
-  # For every sampled halfspace the maximum, the minimum and the midpoint is 
+  
+  # For every sampled halfspace the maximum, the minimum and the midpoint is
   # computed
   max_per_iter <- apply(projections, 2, max)
   min_per_iter <- apply(projections, 2, min)
   mid_per_iter <- (max_per_iter + min_per_iter) / 2
-
+  
   # Compute the cutoff points in conxex set per sampled halfspace
   cutoff_points <- get_cutoff(
     max = max_per_iter,
@@ -81,21 +101,19 @@ train_depth <- function(data, # data to train halfspace depth
     mid = mid_per_iter,
     scope = scope
   )
-
+  
   # The projections matrix (dimensions : (n x n_halfspace)) is split columnwise
-  # into a list. We obtain a list with a length accoring to the number of 
+  # into a list. We obtain a list with a length accoring to the number of
   # sampled halfspaces. Every entry of that list contains the projections of one
-  # subsampled dataset (a vector with length accoring to the sampled 
+  # subsampled dataset (a vector with length accoring to the sampled
   # observations). This representation is required for the subsequent 'get_mass'
   projections_list <-
     split(projections, rep(1:ncol(projections), each = nrow(projections)))
-
+  
   # The relative frequency of the points lying on the left hand side per sampled
   # halfspace is obtained with the function 'mass_left'
-  mass_left <- get_mass_left(
-    cutoffs = cutoff_points,
-    projections = projections_list
-  )
+  mass_left <- get_mass_left(cutoffs = cutoff_points,
+                             projections = projections_list)
   
   # Since the total_mass = mass_right + mass_left = 1, we can subtract mass_left
   # from 1 to obtain the right mass for every sampled hyperplane
@@ -111,27 +129,25 @@ train_depth <- function(data, # data to train halfspace depth
   # Return the list 'halfspaces'
   halfspaces
   
-} 
+}
 
 evaluate_depth <- function(data,
                            halfspaces,
                            type = c("halfspacemass", "halfspacedepth")) {
-  
   ### Input checks and data conversions ###
   if (checkmate::test_matrix(data)) {
     data <- try(as.data.frame(data))
   }
-
-  checkmate::assert_data_frame(data,
+  
+  checkmate::assert_data_frame(
+    data,
     types = c("logical", "integer", "integerish", "double", "numeric"),
     min.rows = 1,
     min.cols = 1
   )
   
-  checkmate::assert_list(
-    halfspaces,
-    len = 4 
-  )
+  checkmate::assert_list(halfspaces,
+                         len = 4)
   
   checkmate::assert_subset(names(halfspaces),
                            c("hyperplanes",
@@ -143,13 +159,11 @@ evaluate_depth <- function(data,
   
   type <- match.arg(type, c("halfspacemass", "halfspacedepth"))
   
-  ### Execution of evaluation of depth ### 
+  ### Execution of evaluation of depth ###
   
-  projections_per_datum <- make_projections_per_datum(
-    data = data,
-    hyperplanes = halfspaces[["hyperplanes"]]
-  )
-
+  projections_per_datum <- make_projections_per_datum(data = data,
+                                                      hyperplanes = halfspaces[["hyperplanes"]])
+  
   halfspace_mass <- get_halfspace_mass(
     projections_per_datum = projections_per_datum,
     cutoff_points = halfspaces[["cutoff_points"]],
@@ -166,16 +180,18 @@ get_unit_vector <- function(dimensions) {
   # Method according to Hicks, J. S. ad Wheeling, R. F. "An Efficient Method for
   # Generating Uniformly Distributed Points on the Surface of an n-Dimensional
   # Sphere." Comm. Assoc. Comput. Mach. 2, 13-15, 1959.
-
+  
   randn <- rnorm(dimensions)
-  normalized_vector <- matrix(randn, ncol = 1) * (1 / norm(randn, type = "2"))
+  normalized_vector <-
+    matrix(randn, ncol = 1) * (1 / norm(randn, type = "2"))
   normalized_vector
 }
 
 sample_without_replacement <- function(data,
                                        fraction) {
-  rows_to_sample <- sample(nrow(data), size = floor(nrow(data) * fraction))
-
+  rows_to_sample <-
+    sample(nrow(data), size = floor(nrow(data) * fraction))
+  
   data[rows_to_sample, , drop = FALSE]
 }
 
@@ -188,12 +204,12 @@ get_cutoff <- function(max,
   lower_sampling_bound <- mid - (0.5 * scope * (max - min))
   upper_sampling_bound <- mid + (0.5 * scope * (max - min))
   
-  # The cutoff points are sampled in the lower and upper sampling bound. 
-  # 
+  # The cutoff points are sampled in the lower and upper sampling bound.
+  #
   cutoff_points <- runif(length(lower_sampling_bound),
                          lower_sampling_bound,
                          upper_sampling_bound)
-                         
+  
   # Return a vector with the cutoff_points for every sampled halfspace
   cutoff_points
 }
@@ -212,12 +228,12 @@ get_halfspace_mass <- function(projections_per_datum,
                                cutoff_points,
                                mass_left,
                                mass_right,
-                               type = c("halfspacemass","halfspacedepth")) {
-  
-  type <- match.arg(type, c("halfspacemass","halfspacedepth"))
+                               type = c("halfspacemass", "halfspacedepth")) {
+  type <- match.arg(type, c("halfspacemass", "halfspacedepth"))
   
   # Initiate a matrix that has (n_halfspaces x n)-dimensions
-  mass_matrix <- matrix(NA,
+  mass_matrix <- matrix(
+    NA,
     nrow = length(projections_per_datum[[1]]),
     ncol = length(projections_per_datum)
   )
@@ -228,63 +244,53 @@ get_halfspace_mass <- function(projections_per_datum,
     mass_matrix[, datum] <-
       ifelse(projections_per_datum[[datum]] < cutoff_points,
              mass_left,
-             mass_right
-      )
+             mass_right)
   }
   
   if (type == "halfspacemass") {
-
     halfspace_mass <- apply(mass_matrix, 2, mean)
     
   } else {
-    
     halfspace_mass <- apply(mass_matrix, 2, min)
     
   }
-
+  
   halfspace_mass
 }
 
 make_projections_per_datum <- function(data, hyperplanes) {
-  
-  # Convert data matrix into a list with length accoring to the amount of 
+  # Convert data matrix into a list with length accoring to the amount of
   # observations. Every entry will be a d-dimensional vector.
-  data_list <- purrr::modify(asplit(data, MARGIN = 1), as.matrix) 
+  data_list <- purrr::modify(asplit(data, MARGIN = 1), as.matrix)
   
-  # Transpose the sampled hyperplanes for subsequent computation of scalar 
+  # Transpose the sampled hyperplanes for subsequent computation of scalar
   # product
-  hyperplanes_transposed <- purrr::modify(hyperplanes, t) 
+  hyperplanes_transposed <- purrr::modify(hyperplanes, t)
   
   # A empty list is initiated with the length according to the observations
-  projections_per_datum <- vector(mode = "list", length = length(data_list)) 
-
+  projections_per_datum <-
+    vector(mode = "list", length = length(data_list))
+  
   # For each observation (a [1 x d]-vector), the scalar product is computed with
-  # every sampled hyperplane (a [d x 1]-vector). The output per interation is a 
-  # vector containing all scaler products with current observation and all the 
+  # every sampled hyperplane (a [d x 1]-vector). The output per interation is a
+  # vector containing all scaler products with current observation and all the
   # scalar products (a [1 x n_halfspaces]-vector).
   for (datum in seq_len(length(data_list))) {
     projections_per_datum[[datum]] <-
       purrr::map_dbl(hyperplanes_transposed, `%*%`, data_list[[datum]])
   }
-
+  
   projections_per_datum
 }
 
 plot_depth <- function(data,
                        halfspaces,
                        type = c("halfspacemass", "halfspacedepth"),
-                       prespecified_grid = NULL){
-  
-  ### Required Packages ###
-  require(tidyverse)
-  require(checkmate)
-  
+                       prespecified_grid = NULL) {
   ### Input checks ###
   
-  checkmate::assert_list(
-    halfspaces,
-    len = 4
-  )
+  checkmate::assert_list(halfspaces,
+                         len = 4)
   
   checkmate::assert_subset(names(halfspaces),
                            c("hyperplanes",
@@ -296,13 +302,11 @@ plot_depth <- function(data,
     prespecified_grid <- try(as.data.frame(prespecified_grid))
     checkmate::assert_data_frame(
       prespecified_grid,
-      types = c(
-        "logical",
-        "integer",
-        "integerish",
-        "double",
-        "numeric"
-      ),
+      types = c("logical",
+                "integer",
+                "integerish",
+                "double",
+                "numeric"),
       ncols = 2,
       min.rows = 1,
       any.missing = FALSE
@@ -338,7 +342,7 @@ plot_depth <- function(data,
     maxima[loc] <- 5
   }
   
-  if (is.null(prespecified_grid)){
+  if (is.null(prespecified_grid)) {
     # Expand the grid of values
     grid_for_plot <- expand.grid(
       x = seq(minima[1], maxima[1], length.out = 50),
@@ -349,7 +353,9 @@ plot_depth <- function(data,
   }
   
   halfspace_mass_grid <-
-    evaluate_depth(data = grid_for_plot, halfspaces = halfspaces, type = type)
+    evaluate_depth(data = grid_for_plot,
+                   halfspaces = halfspaces,
+                   type = type)
   
   data_for_plot <-
     as.data.frame(cbind(grid_for_plot, halfspace_mass_grid))
@@ -364,10 +370,14 @@ plot_depth <- function(data,
   
   ### Plot ###
   
-  spectralcolors <- c(
-    "darkblue", "blue", "cyan", "lightgreen",
-    "yellow", "orange", "red", "darkred"
-  )
+  spectralcolors <- c("darkblue",
+                      "blue",
+                      "cyan",
+                      "lightgreen",
+                      "yellow",
+                      "orange",
+                      "red",
+                      "darkred")
   
   theme_plot <-
     theme(
@@ -377,10 +387,12 @@ plot_depth <- function(data,
       axis.line = element_line(colour = "black")
     )
   
-
+  
   plot_val <-
-    ggplot(data_for_plot, aes_string(x = colnames(data_for_plot)[1],
-                                     y = colnames(data_for_plot)[2])) +
+    ggplot(data_for_plot, aes_string(
+      x = colnames(data_for_plot)[1],
+      y = colnames(data_for_plot)[2]
+    )) +
     geom_tile(aes_string(fill = type,
                          colour = type)) +
     scale_fill_gradientn(type, colors = spectralcolors) +
@@ -394,3 +406,126 @@ plot_depth <- function(data,
   
   plot_val
 }
+
+```
+
+## Plot-Tests
+
+Check Figure 3:
+```{r, vis-hsm-fig3, fig.width = 8, fig.height = 4, out.width = ".6\\textwidth"}
+library(gridExtra)
+data_fig3 <- data.frame(z1 = c(-2, -.5, .5, 2), z2 = 0)
+grid_fig3 <- expand.grid(z1 = seq(-3, 3, l = 51), 
+                         z2 = seq(-3, 3, l = 51))
+
+depth_fig3 <- train_depth(data_fig3, n_halfspace = 1e4, subsample = 1,
+                       scope = 1, seed = 4163)
+# need scope > 1 for reliable halfspace _depth_ approximation:
+depth_fig3_scope15 <- train_depth(data_fig3,
+                               n_halfspace = 1e3, scope = 1.5, subsample = 1,
+                               seed = 4163)
+gridExtra::grid.arrange(
+  plot_depth(halfspaces = depth_fig3_scope15,
+             data = data_fig3,
+             type = "halfspacedepth",
+             prespecified_grid = grid_fig3) +
+    ggtitle("Tukey Halfspace Depth"),
+  plot_depth(halfspaces = depth_fig3,
+             data = data_fig3,
+             type = "halfspacemass",
+             prespecified_grid = grid_fig3) +
+    ggtitle("Halfspace Mass (Chen et al.)"),
+  nrow = 1
+)
+
+```
+
+Check Figure 5: 
+```{r, vis-hsm-fig5, fig.width = 8, fig.height = 4, out.width = ".6\\textwidth"}
+set.seed(187471431)
+# 2D standard Normal:
+cluster <- data.frame(
+  z1 = rnorm(50) / 2, 
+  z2 = rnorm(50) / 2,
+  group = "cluster"
+)
+# polar coordinates: points with distance 3 to 5 from the origin, at 90° - 270°:
+left_anomalies <- data.frame(
+  angle = runif(10, pi / 2, 3 * pi / 2),
+  length = runif(10, 3, 5)
+)
+# convert to cartesian coords
+left_anomalies <- with(left_anomalies, data.frame(
+  z1 = length * cos(angle),
+  z2 = length * sin(angle), 
+  group = "anomaly"
+))
+# ~ N_2(\mu = (6,0), \Sigma = I_2)
+right_anomalies <- data.frame(
+  z1 = rnorm(20) / 5 + 6, 
+  z2 = rnorm(20) / 5,
+  group = "anomaly"
+)
+data_fig5 <- rbind(cluster, 
+                   left_anomalies, 
+                   right_anomalies)
+
+hs_fig5 <- train_depth(data_fig5[, 1:2],
+  n_halfspace = 1e4, subsample = .5,
+  seed = 4165
+)
+
+fig5 <- plot_depth(halfspaces = hs_fig5,
+                   data = data_fig5[, 1:2],
+                   type = "halfspacemass")
+
+fig5 +
+  geom_point(
+    data = subset(data_fig5, group == "cluster"),
+    aes(x = z1, y = z2), color = rgb(0, 0, 1, .5)
+  ) +
+  geom_point(
+    data = subset(data_fig5, group == "anomaly"),
+    aes(x = z1, y = z2), color = rgb(1, 0, 0, .5)
+  )
+```
+
+
+```{r fig 6, fig.width = 8, fig.height = 4,}
+fig6 <- plot_depth(halfspaces = hs_fig5,
+                   data = data_fig5[, 1:2],
+                   type = "halfspacedepth")
+
+fig6 +
+  geom_point(
+    data = subset(data_fig5, group == "cluster"),
+    aes(x = z1, y = z2), color = rgb(0, 0, 1, .5)
+  ) +
+  geom_point(
+    data = subset(data_fig5, group == "anomaly"),
+    aes(x = z1, y = z2), color = rgb(1, 0, 0, .5)
+  )
+```
+
+```{r fig 7 old faithful mass, fig.width = 8, fig.height = 4,}
+faithful <- datasets::faithful
+
+hs_fig7 <- train_depth(faithful,
+  n_halfspace = 1e4, subsample = .5
+)
+
+plot_depth(halfspaces = hs_fig7,
+                   data = faithful,
+                   type = "halfspacemass")
+```
+
+```{r fig 8 faithful depth, fig.width = 8, fig.height = 4,}
+
+hs_fig8 <- train_depth(faithful,
+  n_halfspace = 1e4, subsample = .5
+)
+
+plot_depth(halfspaces = hs_fig8,
+                   data = faithful,
+                   type = "halfspacedepth")
+```
