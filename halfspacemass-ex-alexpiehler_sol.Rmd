@@ -16,6 +16,8 @@ Leider ist die Implementierung nicht 100% top-down, da die `plot_depth()`-Funkti
 ## Code
 
 ```{r halfspacemass functions}
+# Function tain_depth takes numeric data and returns a halfspaces-list, which
+# can be used in the plot_depth() and evaluate_depth() function
 train_depth <- function(data,
                         # data to train halfspace depth
                         n_halfspace,
@@ -23,11 +25,12 @@ train_depth <- function(data,
                         subsample,
                         # fraction of of data which shall be used in each
                         scope = 1,
-                        # the sampling region for the splitpoint within the convex set
+                        # the sampling region for the splitpoint within the 
+                        # convex set
                         seed = 111191) {
   ### Required Packages ###
-  surpressMessages(require(tidyverse))
-  surpressMessages(require(checkmate))
+  suppressMessages(require(tidyverse))
+  suppressMessages(require(checkmate))
   
   
   ### Input Checks ###
@@ -131,6 +134,10 @@ train_depth <- function(data,
   
 }
 
+# evaluate_depth() takes as input the computed list in train_depth() and some
+# data with the same columns that train_depth() was used on and returns a vector
+# of either the halfspacemass or the halfspacedepth for each observation. 
+# The function is used in the plot_depth() function
 evaluate_depth <- function(data,
                            halfspaces,
                            type = c("halfspacemass", "halfspacedepth")) {
@@ -161,8 +168,10 @@ evaluate_depth <- function(data,
   
   ### Execution of evaluation of depth ###
   
-  projections_per_datum <- make_projections_per_datum(data = data,
-                                                      hyperplanes = halfspaces[["hyperplanes"]])
+  projections_per_datum <- 
+    make_projections_per_datum(
+      data = data, hyperplanes = halfspaces[["hyperplanes"]]
+      )
   
   halfspace_mass <- get_halfspace_mass(
     projections_per_datum = projections_per_datum,
@@ -176,6 +185,8 @@ evaluate_depth <- function(data,
   halfspace_mass
 }
 
+# get_unit_vector() is used in the train_depth() function and returns a unit 
+# vector for a given dimension
 get_unit_vector <- function(dimensions) {
   # Method according to Hicks, J. S. ad Wheeling, R. F. "An Efficient Method for
   # Generating Uniformly Distributed Points on the Surface of an n-Dimensional
@@ -187,6 +198,8 @@ get_unit_vector <- function(dimensions) {
   normalized_vector
 }
 
+# sample_without_replacement() takes data and samples a fraction of that data
+# without replacement. The function is used in train_depth()
 sample_without_replacement <- function(data,
                                        fraction) {
   rows_to_sample <-
@@ -195,6 +208,9 @@ sample_without_replacement <- function(data,
   data[rows_to_sample, , drop = FALSE]
 }
 
+# Get cutoff takes the minimum, the maximum, and the mid point of a convex set
+# and samples a random cutoff point within this convex set. The function is used
+# in the train_depth() function
 get_cutoff <- function(max,
                        min,
                        mid,
@@ -205,7 +221,6 @@ get_cutoff <- function(max,
   upper_sampling_bound <- mid + (0.5 * scope * (max - min))
   
   # The cutoff points are sampled in the lower and upper sampling bound.
-  #
   cutoff_points <- runif(length(lower_sampling_bound),
                          lower_sampling_bound,
                          upper_sampling_bound)
@@ -214,6 +229,9 @@ get_cutoff <- function(max,
   cutoff_points
 }
 
+# get_mass_left() computes the relative frequency of points, which lie left
+# w.r.t. a given cutoff point in a 1-d convex set. This function is used in
+# the train_depth() function
 get_mass_left <- function(cutoffs,
                           projections) {
   points_in_halfspace <-
@@ -224,6 +242,8 @@ get_mass_left <- function(cutoffs,
   mass
 }
 
+# get_halfspace_mass() is used to compute the halfspacemass or halfspacedepth
+# for points of a dataset. It is used in the evaluate_depth() function.
 get_halfspace_mass <- function(projections_per_datum,
                                cutoff_points,
                                mass_left,
@@ -258,6 +278,8 @@ get_halfspace_mass <- function(projections_per_datum,
   halfspace_mass
 }
 
+# make_projections_per_datum() is used to project a given dataset onto a set
+# of sampled unit vectors. It is used in the evaluate_depth() function
 make_projections_per_datum <- function(data, hyperplanes) {
   # Convert data matrix into a list with length accoring to the amount of
   # observations. Every entry will be a d-dimensional vector.
@@ -283,6 +305,12 @@ make_projections_per_datum <- function(data, hyperplanes) {
   projections_per_datum
 }
 
+# plot_depth() uses the evaluate_depth() function to output a plot the
+# halfspacemass or halfspacedepth of a certain 2-d dataset. The 'data' argument
+# takes the original data, which was used to train the 'halfspaces' object. 
+# This is done to obtain a range for the x- and y-axis and to plot the
+# datapoints. One can also choose to already specify a certain grid over which
+# the data should be plotted. 
 plot_depth <- function(data,
                        halfspaces,
                        type = c("halfspacemass", "halfspacedepth"),
@@ -345,8 +373,8 @@ plot_depth <- function(data,
   if (is.null(prespecified_grid)) {
     # Expand the grid of values
     grid_for_plot <- expand.grid(
-      x = seq(minima[1], maxima[1], length.out = 50),
-      y = seq(minima[2], maxima[2], length.out = 50)
+      x = seq(minima[[1]], maxima[[1]], length.out = 50),
+      y = seq(minima[[2]], maxima[[2]], length.out = 50)
     )
   } else {
     grid_for_plot <- prespecified_grid
@@ -390,16 +418,16 @@ plot_depth <- function(data,
   
   plot_val <-
     ggplot(data_for_plot, aes_string(
-      x = colnames(data_for_plot)[1],
-      y = colnames(data_for_plot)[2]
+      x = colnames(data_for_plot)[[1]],
+      y = colnames(data_for_plot)[[2]]
     )) +
     geom_tile(aes_string(fill = type,
                          colour = type)) +
     scale_fill_gradientn(type, colors = spectralcolors) +
     scale_colour_gradientn(type, colors = spectralcolors) +
     geom_point(data = as.data.frame(data),
-               aes_string(x = colnames(data)[1],
-                          y = colnames(data)[2]),
+               aes_string(x = colnames(data)[[1]],
+                          y = colnames(data)[[2]]),
                color = "white") +
     theme_minimal() +
     theme_plot
@@ -490,7 +518,6 @@ fig5 +
   )
 ```
 
-
 ```{r fig 6, fig.width = 8, fig.height = 4,}
 fig6 <- plot_depth(halfspaces = hs_fig5,
                    data = data_fig5[, 1:2],
@@ -506,6 +533,8 @@ fig6 +
     aes(x = z1, y = z2), color = rgb(1, 0, 0, .5)
   )
 ```
+
+### Test with Old Faithful Data
 
 ```{r fig 7 old faithful mass, fig.width = 8, fig.height = 4,}
 faithful <- datasets::faithful
