@@ -8,6 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+# Lösung 
 
 Im Nachfolgenden sind sowohl die Funktionen zu finden als auch die von Ihnen vorgegebenen Tests, sowie eine weitere Anwendung auf den `datasets::faithful`-Datensatz.
 
